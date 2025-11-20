@@ -1,7 +1,9 @@
 INFO:     Will watch for changes in these directories: ['/home/workspace']
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [1223] using StatReload
-INFO:     Started server process [1225]
+INFO:     Started reloader process [1294] using StatReload
+INFO:     Started server process [1296]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     172.20.0.1:57942 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     172.20.0.1:42220 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     172.20.0.1:53756 - "OPTIONS /api/contact HTTP/1.1" 200 OK
+INFO:     172.20.0.1:53756 - "POST /api/contact HTTP/1.1" 422 Unprocessable Content

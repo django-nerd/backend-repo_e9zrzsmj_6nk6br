@@ -50,3 +50,9 @@ class Contact(BaseModel):
     email: EmailStr = Field(..., description="Sender email")
     subject: Optional[str] = Field(None, max_length=150, description="Subject line")
     message: str = Field(..., min_length=10, max_length=2000, description="Message body")
+
+class ContactSubmission(Contact):
+    """Incoming submission payload with anti-spam honeypot field.
+    The honeypot is not stored, only used to detect bots.
+    """
+    hp: Optional[str] = Field(None, max_length=200, description="Honeypot field for spam detection")
