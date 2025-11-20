@@ -1,9 +1,7 @@
 import os
-import smtplib
 import logging
 from pathlib import Path
-from email.message import EmailMessage
-from typing import Optional, List
+from typing import List
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -98,7 +96,7 @@ def hello():
 
 @app.get("/test")
 def test_database():
-    """Test endpoint to check if database and email env are available and accessible"""
+    """Test endpoint to check if database is available and accessible"""
     response = {
         "backend": "✅ Running",
         "database": "❌ Not Available",
@@ -106,13 +104,6 @@ def test_database():
         "database_name": None,
         "connection_status": "Not Connected",
         "collections": [],
-        "smtp": {
-            "host": "❌ Not Set",
-            "port": "",
-            "user": "",
-            "from": "",
-            "configured": False,
-        },
         "rate_limit": os.getenv("RATE_LIMIT_PER_MIN", "not set"),
     }
     try:
@@ -132,73 +123,7 @@ def test_database():
     except Exception as e:
         response["database"] = f"❌ Error: {str(e)[:50]}"
 
-    # Check SMTP envs
-    host = os.getenv("SMTP_HOST")
-    port = os.getenv("SMTP_PORT") or ""
-    user = os.getenv("SMTP_USER")
-    email_from = os.getenv("EMAIL_FROM") or ""
-    email_to = os.getenv("EMAIL_TO")
-
-    response["smtp"]["host"] = "✅ Set" if host else "❌ Not Set"
-    response["smtp"]["port"] = port
-    response["smtp"]["user"] = "✅ Set" if user else "❌ Not Set"
-    response["smtp"]["from"] = email_from
-
-    # Consider SMTP "configured" only if all required fields exist (don't expose PASS)
-    response["smtp"]["configured"] = all([
-        host,
-        port,
-        user,
-        os.getenv("SMTP_PASS"),
-        email_from,
-        email_to,
-    ])
-
     return response
-
-
-def send_email_notification(contact: Contact):
-    """Send an email notification via SMTP using environment variables.
-
-    Required envs: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM, EMAIL_TO
-    """
-    host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    user = os.getenv("SMTP_USER")
-    password = os.getenv("SMTP_PASS")
-    email_from = os.getenv("EMAIL_FROM")
-    email_to = os.getenv("EMAIL_TO")
-
-    if not all([host, port, user, password, email_from, email_to]):
-        # Silently skip if email not configured; don't block contact storage
-        logger.info("SMTP not fully configured. Skipping email notification.")
-        return False
-
-    msg = EmailMessage()
-    msg["Subject"] = f"Neue Kontaktanfrage: {contact.subject or 'Ohne Betreff'}"
-    msg["From"] = email_from
-    msg["To"] = email_to
-
-    body = (
-        f"Name: {contact.name}\n"
-        f"E-Mail: {contact.email}\n"
-        f"Betreff: {contact.subject or '-'}\n\n"
-        f"Nachricht:\n{contact.message}\n"
-    )
-    msg.set_content(body)
-
-    try:
-        logger.info("Attempting SMTP send via %s:%s as %s to %s", host, port, user, email_to)
-        with smtplib.SMTP(host, port) as server:
-            server.starttls()
-            server.login(user, password)
-            server.send_message(msg)
-        logger.info("SMTP send succeeded to %s", email_to)
-        return True
-    except Exception as e:
-        # Don't break the flow; just log the exception for diagnostics
-        logger.exception("SMTP send failed: %s", repr(e))
-        return False
 
 
 # Simple in-process rate limiting using env-based threshold
@@ -228,7 +153,7 @@ async def submit_contact(payload: ContactSubmission, request: Request):
     """
     # Honeypot: if filled, pretend success but do nothing
     if payload.hp and payload.hp.strip():
-        logger.info("Honeypot triggered. Skipping persistence and email.")
+        logger.info("Honeypot triggered. Skipping persistence.")
         return {"ok": True}
 
     # Rate limit per IP
@@ -243,10 +168,6 @@ async def submit_contact(payload: ContactSubmission, request: Request):
         contact = Contact(**payload.model_dump(exclude={"hp"}))
         contact_id = create_document("contact", contact)
         logger.info("Stored contact %s from %s <%s>", contact_id, contact.name, contact.email)
-
-        # Fire-and-forget email notification
-        send_email_notification(contact)
-
         return {"ok": True, "id": contact_id}
     except Exception as e:
         logger.exception("Contact submission failed: %s", repr(e))
