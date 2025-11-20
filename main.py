@@ -23,10 +23,11 @@ if not logger.handlers:
 
 app = FastAPI(title="Furry Verein Backend")
 
+# CORS: allow all origins without credentials to avoid browser CORS failures
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
