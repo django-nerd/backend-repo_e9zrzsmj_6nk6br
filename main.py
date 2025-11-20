@@ -3,9 +3,10 @@ import smtplib
 import logging
 from pathlib import Path
 from email.message import EmailMessage
-from fastapi import FastAPI, HTTPException, Request
+from typing import Optional, List
+
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
 
 from schemas import Contact, ContactSubmission
 from database import create_document, db
@@ -23,22 +24,77 @@ if not logger.handlers:
 
 app = FastAPI(title="Furry Verein Backend")
 
-# CORS: allow all origins without credentials to avoid browser CORS failures
+# --- CORS configuration ---
+# We keep Starlette's CORSMiddleware, but also add a hardening middleware to ensure
+# Access-Control-Allow-* headers are always present even behind proxies (e.g. Vercel).
+
+def parse_allowed_origins() -> List[str]:
+    # Allow list via env (comma-separated). Falls back to explicit frontend or wildcard.
+    env_val = os.getenv("ALLOW_ORIGINS", "").strip()
+    if env_val:
+        return [o.strip() for o in env_val.split(",") if o.strip()]
+    # Fallbacks
+    frontend_env = os.getenv("FRONTEND_ORIGIN")
+    if frontend_env:
+        return [frontend_env]
+    # Last resort: open CORS (no credentials)
+    return ["*"]
+
+ALLOWED_ORIGINS = parse_allowed_origins()
+ALLOW_CREDENTIALS = False  # keep false to legally allow "*"
+ALLOW_METHODS = ["*"]
+ALLOW_HEADERS = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=ALLOW_CREDENTIALS,
+    allow_methods=ALLOW_METHODS,
+    allow_headers=ALLOW_HEADERS,
 )
+
+# Hardening middleware: always attach CORS headers on responses.
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    origin = request.headers.get("origin")
+    allowed = "*" in ALLOWED_ORIGINS or (origin in ALLOWED_ORIGINS if origin else False)
+
+    # Handle preflight early
+    if request.method == "OPTIONS":
+        headers = {
+            "Access-Control-Allow-Origin": "*" if "*" in ALLOWED_ORIGINS else (origin or ALLOWED_ORIGINS[0]),
+            "Access-Control-Allow-Methods": ", ".join(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),
+            "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", ", ".join(ALLOW_HEADERS)),
+            "Access-Control-Max-Age": "86400",
+            "Vary": "Origin",
+        }
+        return Response(status_code=204, headers=headers)
+
+    response = await call_next(request)
+
+    # Attach headers on all responses (including errors)
+    if allowed:
+        response.headers["Access-Control-Allow-Origin"] = "*" if "*" in ALLOWED_ORIGINS else origin
+    else:
+        # If we have a fixed allow list and no origin matched, still expose the first allowed
+        # to avoid missing header in some edge deployments (non-browser requests will ignore it).
+        response.headers["Access-Control-Allow-Origin"] = "*" if "*" in ALLOWED_ORIGINS else ALLOWED_ORIGINS[0]
+
+    response.headers["Access-Control-Allow-Methods"] = ", ".join(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+    response.headers["Access-Control-Allow-Headers"] = ", ".join(ALLOW_HEADERS) if isinstance(ALLOW_HEADERS, list) else str(ALLOW_HEADERS)
+    response.headers["Vary"] = "Origin"
+    return response
+
 
 @app.get("/")
 def read_root():
     return {"message": "Hello from FastAPI Backend!"}
 
+
 @app.get("/api/hello")
 def hello():
     return {"message": "Hello from the backend API!"}
+
 
 @app.get("/test")
 def test_database():
