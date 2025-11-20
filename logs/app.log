@@ -1,0 +1,7 @@
+2025-11-20 22:46:25,970 [ERROR] Contact submission failed: Exception('Database not available. Check DATABASE_URL and DATABASE_NAME environment variables.')
+Traceback (most recent call last):
+  File "/home/workspace/main.py", line 188, in submit_contact
+    contact_id = create_document("contact", contact)
+  File "/home/workspace/database.py", line 32, in create_document
+    raise Exception("Database not available. Check DATABASE_URL and DATABASE_NAME environment variables.")
+Exception: Database not available. Check DATABASE_URL and DATABASE_NAME environment variables.
